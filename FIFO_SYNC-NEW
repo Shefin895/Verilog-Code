@@ -1,0 +1,139 @@
+// Code your design here
+//FIFO
+
+module FIFO_DESGIN#(parameter fifo_depth=8,data_width=32)
+  //input and output
+  (
+    input clk,
+    input reset_n,
+    input cs,//chipselect
+    input we,
+    input re,
+    input [data_width-1:0]data_in,
+    output reg [data_width-1:0]data_out,
+    output empty,full
+  );
+  
+  localparam fifo_depth_log = $clog2(fifo_depth);// clog2(8)==3
+  //declaring mem for fifo
+  
+  reg [data_width-1:0]fifo_mem [0:fifo_depth-1]; // [31:0]fifo mem [0:7] //32 bit element with 8 mem location
+  
+  //read and write pointer have 1 extra bits at MSB
+  
+  reg [fifo_depth_log:0] wp; //[3:0]wp,rp
+  reg [fifo_depth_log:0] rp;//4bit
+  
+  //write
+  always @(posedge clk or negedge reset_n)begin
+    if(!reset_n)//if reset==0 sytem reset
+      wp<=0;
+    else if(cs && we && !full)begin
+      fifo_mem[wp[fifo_depth_log-1:0]]<=data_in;//3bit wp
+      wp<=wp+1;
+    end
+  end
+  //read
+  always @(posedge clk or negedge reset_n)begin
+    if(!reset_n)//if reset==0 sytem reset
+      rp<=0;
+    else if(cs && re && !full)begin
+      data_out<=fifo_mem[rp[fifo_depth_log-1:0]];//3bit wp
+      rp<=rp+1;
+    end
+  end
+//full and empty condition 
+  
+  assign empty = (rp==wp);
+  assign full =  (rp== {~wp[fifo_depth_log],wp[fifo_depth_log-1:0]});//wrap bit msb
+endmodule
+
+
+module fifo_tb();
+  parameter fifo_depth=8;
+  parameter data_width=32;
+  //input and output
+    reg clk;
+    reg reset_n;
+    reg cs;//chipselect
+    reg we;
+    reg re;
+  reg [data_width-1:0]data_in;
+  wire [data_width-1:0]data_out;
+    wire empty;
+    wire full;
+  
+  //connecting dut to  tb
+  
+  FIFO_DESGIN #(.fifo_depth(fifo_depth),.data_width(data_width))dut
+    	(.clk      	(clk     ), 
+         .reset_n   (reset_n ),
+         .cs      	(cs      ),	 
+         .we   		(we   ), 
+         .re   		(re   ), 
+         .data_in 	(data_in ), 
+         .data_out	(data_out), 
+	     .empty   	(empty   ),
+	     .full    	(full    ));
+  
+  
+  //generation of clk
+  initial clk=0;
+  always begin #4 clk=~clk; end
+  
+  //task based stimulus generattion
+  //task for write data
+  task write_data(input [data_width-1:0]din);begin
+    @(posedge clk);
+    cs=1;
+    we=1;
+    data_in=din;
+    $display("[%0t],Write data = %0d",$time,data_in);
+    @(posedge clk);
+    cs=1;we=0;
+  end
+  endtask
+  
+  //task for read data
+  task read_data();begin
+    @(posedge clk);
+    cs=1;re=1;
+    @(posedge clk);
+    $display("[%0t],Read data=%0d",$time,data_out);
+    cs=1;re=0;
+  end
+  endtask
+  
+  //creating stimulus
+  initial begin
+    //making rst=0;
+    #1;
+    reset_n=0;
+    we=0;re=0;
+    @(posedge clk);
+    reset_n=1;
+    $display("%0t =================START OF CHECK 1=============== ",$time);
+    write_data(20);
+    write_data(245);
+    write_data(985);
+    read_data();
+    read_data();
+    read_data();
+    $display("%0t =================END OF CHECK 1=============== ",$time);
+    ///////////////////////////////////////////////////////////////////////////
+    $display("%0t =================START OF CHECK 2=============== ",$time);
+    for(int i=0;i<fifo_depth;i=i+1)begin
+      write_data(i**5);
+      read_data();
+      $display("-------------------------------------------------");
+    end
+      
+    $display("%0t =================END OF CHECK 2=============== ",$time);
+///////////////////////////////////////////////////////////////////////////////    
+    $finish();
+      end
+    initial begin
+    $dumpfile("dump.vcd"); 
+      $dumpvars();
+  end
+endmodule
